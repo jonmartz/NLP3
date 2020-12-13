@@ -33,7 +33,8 @@ X_train_and_valid = np.zeros([len(texts_train), sequence_len], dtype=int)
 X_test = np.zeros([len(texts_test), sequence_len], dtype=int)
 for texts, X in zip([texts_train, texts_test], [X_train_and_valid, X_test]):
     for i, text in enumerate(texts):
-        x = [word_indexes[word] for word in tokenize(text)]
+        words = tokenize(text)
+        x = [word_indexes[word] for word in words]
         X[i, -len(x):] = x[:sequence_len]  # take padding and maximum sequence length into account
 
 print('starting k-fold cross-validation...')
