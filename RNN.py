@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 class RNNTrumpDetector(nn.Module):
     def __init__(self, word_vectors, word_indexes, sequence_len, n_features, lstm_out_dim, lstm_layers,
-                 dense_layer_dims, epochs, device, lstm_dropout=0.2, lstm_out_dropout=0.2, batch_size=128,
+                 dense_layer_dims, epochs, device, lstm_dropout=0.2, lstm_out_dropout=0.2, batches=30,
                  lr=0.005, steps_between_validations=1, clip_size=5):
         super(RNNTrumpDetector, self).__init__()
         self.word_indexes = word_indexes
@@ -17,7 +17,7 @@ class RNNTrumpDetector(nn.Module):
         self.lstm_out_dim = lstm_out_dim
         self.device = device
         self.epochs = epochs
-        self.batch_size = batch_size
+        self.n_batches = batches
         self.lr = lr
         self.steps_between_validations = steps_between_validations
         self.clip_size = clip_size
@@ -66,7 +66,7 @@ class RNNTrumpDetector(nn.Module):
                   weight.new(self.lstm_layers, batch_size, self.lstm_out_dim).zero_().to(self.device))
         return hidden
 
-    def fit(self, X_train, y_train, valid_frac=0.2, verbose=True, plot_history=True):
+    def fit(self, X_train, y_train, valid_frac=0.2, verbose=True, plot_history=True, save_model=False):
 
         X_train, y_train = X_train.toarray(), np.array(y_train, dtype=int)  # .reshape(-1, 1)
 
@@ -77,28 +77,31 @@ class RNNTrumpDetector(nn.Module):
             y_valid = y_train[train_len:]
             X_train = X_train[:train_len]
             y_train = y_train[:train_len]
+
+            batch_size_valid = int(len(y_valid) / self.n_batches)
             val_data = TensorDataset(torch.from_numpy(X_valid), torch.from_numpy(y_valid))
-            val_loader = DataLoader(val_data, shuffle=True, batch_size=self.batch_size)
+            val_loader = DataLoader(val_data, shuffle=True, batch_size=batch_size_valid)
 
             total_valid_losses = []
             total_valid_accs = []
             valid_loss_min = np.Inf
 
+        batch_size_train = int(len(y_train) / self.n_batches)
         train_data = TensorDataset(torch.from_numpy(X_train), torch.from_numpy(y_train))
-        train_loader = DataLoader(train_data, shuffle=True, batch_size=self.batch_size)
+        train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size_train)
 
         total_train_losses = []
 
         self.train()
         counter = 0
         for epoch in range(self.epochs):
-            h = self.init_hidden(self.batch_size)
+            h = self.init_hidden(batch_size_train)
 
             batch = 0
             for x_train, y_train in train_loader:
                 batch += 1
-                if batch == len(train_loader):
-                    continue  # todo: fix last batch instead of skipping it
+                if not y_train.shape[0] == batch_size_train:
+                    continue
                 counter += 1
                 h = tuple([e.data for e in h])
                 x_train, y_train = x_train.to(self.device), y_train.to(self.device)
@@ -116,14 +119,12 @@ class RNNTrumpDetector(nn.Module):
                 self.optimizer.step()
 
                 if validate and counter % self.steps_between_validations == 0:
-                    val_h = self.init_hidden(self.batch_size)
+                    val_h = self.init_hidden(batch_size_valid)
                     val_losses = []
                     valid_accs = []
                     self.eval()
-                    j = 0
                     for x_valid, y_valid in val_loader:
-                        j += 1
-                        if j == len(val_loader):
+                        if not y_valid.shape[0] == batch_size_valid:
                             continue
                         val_h = tuple([each.data for each in val_h])
                         x_valid, y_valid = x_valid.to(self.device), y_valid.to(self.device)
@@ -141,7 +142,8 @@ class RNNTrumpDetector(nn.Module):
                     val_accs_mean = float(np.mean(valid_accs))
                     best_str = ''
                     if np.mean(val_losses) <= valid_loss_min:
-                        # torch.save(model.state_dict(), './state_dict.pt')
+                        if save_model:
+                            torch.save(self.state_dict(), './state_dict.pt')
                         valid_loss_min = val_losses_mean
                         best_str = ' NEW BEST'
                     if verbose:
