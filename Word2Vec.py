@@ -1,6 +1,6 @@
 import spacy
 import pandas as pd
-from preprocessing import tokenize
+import preprocessing as pre
 import json
 import gzip
 
@@ -15,10 +15,11 @@ df_test = pd.read_csv('dataset_test.csv')
 texts = pd.concat([df_train['tweet text'], df_test['tweet text']])
 for i, text in enumerate(texts):
     print('%d/%d' % (i + 1, len(texts)))
-    for word in tokenize(text):
+    words = pre.tokenize_for_vectors(text)
+    for word in words:
         if word not in vocabulary:
             token = language_model(word)
-            if token.has_vector:
+            if token.vector_norm:
                 vocabulary.add(word)
                 vocabulary_ordered.append(word)
                 vectors.append(token.vector.tolist())

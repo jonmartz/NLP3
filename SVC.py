@@ -1,4 +1,4 @@
-from preprocessing import TimeStatistics, TextStatistics, ItemSelector
+from preprocessing import TimeStatistics, TextStatistics, ItemSelector, WordEmbedder
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.feature_extraction.text import TfidfVectorizer
 import preprocessing as pre
@@ -10,8 +10,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-
-score_index = ['Logistic_Regression', 'SVC_sigmoid', 'SVC_rbf', 'SVC_linear', 'FFNN']
+from RNN import RNNTrumpDetector
+from gensim.models import KeyedVectors
+import gzip
+import json
 
 
 class Net(nn.Module):
@@ -72,45 +74,67 @@ def create_fnn_model(features_count, hidden_layer_size=300, learn_rate=0.001):
     return FNNClassifier(model=net, optimizer=optimizer, criterion=criterion)
 
 
-classifiers = [
-    LogisticRegression(solver='liblinear'),
-    SVC(kernel='sigmoid'),
-    SVC(kernel='rbf'),
-    SVC(kernel='linear'),
-    create_fnn_model(9006),
+def create_rnn_model(n_features, lstm_out_dim=512, lstm_layers=2, epochs=50, batch_size=128, sequence_len=30,
+                     lr=0.001, dense_layer_dims=[1024, 512, 256, 128]):
+    # loading word vectors
+    with gzip.open('vectors.sav', 'r') as file:
+        json_bytes = file.read()
+    word_vectors = json.loads(json_bytes.decode('utf-8'))
+    word_vectors = np.array([[0] * len(word_vectors[0])] + word_vectors)  # add padding
+    with gzip.open('vocab.sav', 'r') as file:
+        json_bytes = file.read()
+    vocabulary = ['-'] + json.loads(json_bytes.decode('utf-8'))  # the '-' is for padding
+    word_indexes = {word: i for i, word in enumerate(vocabulary)}
 
-]
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+    model = RNNTrumpDetector(word_vectors, word_indexes, sequence_len, n_features, lstm_out_dim, lstm_layers,
+                             dense_layer_dims, device, epochs=epochs, batch_size=batch_size, lr=lr)
+    model.to(device)
+    return model
 
 
-def create_pipeline(clf):
-    return Pipeline([('features', FeatureUnion(transformer_list=
-    [
+classifiers = {
+    # 'Logistic_Regression': LogisticRegression(solver='liblinear'),
+    # 'SVC_sigmoid': SVC(kernel='sigmoid'),
+    # 'SVC_rbf': SVC(kernel='rbf'),
+    # 'SVC_linear': SVC(kernel='linear'),
+    # 'FFNN': create_fnn_model(9006),
+    'RNN': create_rnn_model(9006)
+}
+
+
+def create_pipeline(clf_name, clf):
+    transformers = [
         ('tfidf', Pipeline(
             [
                 ('selector', ItemSelector(key=pre.processed_tweet_text)),
-                ('TfidfVectorizer',
-                 TfidfVectorizer(lowercase=False, min_df=1, tokenizer=pre.tokenize, max_features=9000,
-                                 ngram_range=(1, 3)))
+                ('TfidfVectorizer', TfidfVectorizer(lowercase=False, min_df=1, tokenizer=pre.tokenize,
+                                                    max_features=9000, ngram_range=(1, 3)))
             ])
          ),
         ('time', TimeStatistics(pre.tweet_time)),
-        ('text', TextStatistics(pre.tweet_text)),
-    ])), ('clf', clf)])
+        ('text', TextStatistics(pre.tweet_text))
+    ]
+    if clf_name == 'RNN':
+        transformers.insert(0, ('embeddings', WordEmbedder(pre.tweet_text, clf.word_indexes)))
+    return Pipeline([('features', FeatureUnion(transformers)), ('clf', clf)])
 
 
 def apply_train_and_test(X_train, y_train, X_test, y_test, score):
-    for clf_idx, clf in enumerate(classifiers):
-        pipeline = create_pipeline(clf)
+    for clf_name, clf in classifiers.items():
+        pipeline = create_pipeline(clf_name, clf)
         pipeline.fit(X_train, y_train)
         y_pred = pipeline.predict(X_test)
-        if clf_idx == score_index.index('FFNN'):
+        if clf_name == 'FFNN':
             y_pred = list(map(lambda x: 0 if x[0] > x[1] else 1, y_pred))
-        score[score_index[clf_idx]].append(pre.print_evaluation_results(y_test, y_pred))
-    return score
+        score[clf_name].append(pre.print_evaluation_results(y_test, y_pred))
 
 
 def train_and_test_models():
-    score = {'Logistic_Regression': [], 'SVC_sigmoid': [], 'SVC_rbf': [], 'SVC_linear': [], 'FFNN': []}
+    score = {clf_name: [] for clf_name in classifiers.keys()}
     tweets_df, target = pre.get_raw_data()
     tscv = TimeSeriesSplit(n_splits=2)
     split_counter = 1
@@ -120,7 +144,6 @@ def train_and_test_models():
         y_train, y_test = target[train_index], target[test_index]
         apply_train_and_test(X_train, y_train, X_test, y_test, score)
         split_counter += 1
-    print(score_index)
     print(score)
 
 

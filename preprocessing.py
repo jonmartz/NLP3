@@ -71,6 +71,17 @@ def tokenize(text):
     return stems
 
 
+def tokenize_for_vectors(text):
+    punct = ['!', '?', '@', '#', '$', '%', '&', '(', ')', '-', '=', '+', '/', ':', ';', "'", '"', ',', '.']
+    tokens = nltk.word_tokenize(text.lower())
+    selected_tokens = []
+    for token in tokens:
+        # accept only alphabetic words (with hyphens too), abbreviations and simple punctuations
+        if token in punct or token.replace('.', '').replace('-', '').isalpha():
+            selected_tokens.append(token)
+    return selected_tokens
+
+
 class ItemSelector(BaseEstimator, TransformerMixin):
     def __init__(self, key):
         self.key = key
@@ -168,6 +179,27 @@ class TextStatistics:
         transforms_to_apply = [self.get_sentiment_analysis]
         texts = df[self.key].apply(self.normalize)
         return np.concatenate(([transform(texts) for transform in transforms_to_apply]), axis=1)
+
+
+class WordEmbedder:
+    def __init__(self, key, word_indexes, sequence_len=30):
+        self.features_name = ['w%d' % i for i in range(sequence_len)]
+        self.key = key
+        self.word_indexes = word_indexes
+        self.sequence_len = sequence_len
+
+    def fit(self, df, y=None):
+        return self
+
+    def transform(self, df, y=None):
+        texts = df[self.key]
+        X = np.zeros([len(texts), self.sequence_len], dtype=int)
+        for i, text in enumerate(texts):
+            words = tokenize_for_vectors(text)
+            # x = [self.word_indexes[word] if word in self.word_indexes else 0 for word in words]
+            x = [self.word_indexes[word] for word in words if word in self.word_indexes]
+            X[i, -len(x):] = x[:self.sequence_len]  # take padding and maximum sequence length into account
+        return X
 
 
 def print_evaluation_results(y_test, predictions):
