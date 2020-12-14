@@ -74,7 +74,7 @@ def create_fnn_model(features_count, hidden_layer_size=300, learn_rate=0.001):
     return FNNClassifier(model=net, optimizer=optimizer, criterion=criterion)
 
 
-def create_rnn_model(n_features, lstm_out_dim=512, lstm_layers=2, epochs=50, batch_size=128, sequence_len=30,
+def create_rnn_model(n_features, lstm_out_dim=512, lstm_layers=2, epochs=5, n_batches=30, sequence_len=30,
                      lr=0.001, dense_layer_dims=[1024, 512, 256, 128]):
     # loading word vectors
     with gzip.open('vectors.sav', 'r') as file:
@@ -91,7 +91,7 @@ def create_rnn_model(n_features, lstm_out_dim=512, lstm_layers=2, epochs=50, bat
     else:
         device = torch.device('cpu')
     model = RNNTrumpDetector(word_vectors, word_indexes, sequence_len, n_features, lstm_out_dim, lstm_layers,
-                             dense_layer_dims, device, epochs=epochs, batch_size=batch_size, lr=lr)
+                             dense_layer_dims, epochs, device, n_batches=n_batches, lr=lr)
     model.to(device)
     return model
 

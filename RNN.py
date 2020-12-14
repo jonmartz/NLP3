@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 class RNNTrumpDetector(nn.Module):
     def __init__(self, word_vectors, word_indexes, sequence_len, n_features, lstm_out_dim, lstm_layers,
-                 dense_layer_dims, epochs, device, lstm_dropout=0.2, lstm_out_dropout=0.2, batches=30,
+                 dense_layer_dims, epochs, device, lstm_dropout=0.2, lstm_out_dropout=0.2, n_batches=30,
                  lr=0.005, steps_between_validations=1, clip_size=5):
         super(RNNTrumpDetector, self).__init__()
         self.word_indexes = word_indexes
@@ -17,7 +17,7 @@ class RNNTrumpDetector(nn.Module):
         self.lstm_out_dim = lstm_out_dim
         self.device = device
         self.epochs = epochs
-        self.n_batches = batches
+        self.n_batches = n_batches
         self.lr = lr
         self.steps_between_validations = steps_between_validations
         self.clip_size = clip_size
