@@ -133,7 +133,7 @@ class RNNTrumpDetector(nn.Module):
                         val_losses.append(val_loss.item())
 
                         pred = torch.round(out.squeeze())
-                        correct_tensor = pred.eq(y_train.float().view_as(pred))
+                        correct_tensor = pred.eq(y_valid.float().view_as(pred))
                         correct = np.squeeze(correct_tensor.cpu().numpy())
                         valid_accs.append(np.mean(correct))
 
@@ -149,13 +149,19 @@ class RNNTrumpDetector(nn.Module):
                     if verbose:
 
                         # for comparing validation performance with a random flip coin classifier
-                        rnd_valid_acc = float(np.mean(y_train))
-                        rnd_valid_acc = max(rnd_valid_acc, 1 - rnd_valid_acc)
+                        # rnd_valid_acc = float(np.mean(y_valid.numpy()))/
+                        # rnd_valid_acc = max(rnd_valid_acc, 1 - rnd_valid_acc)
+                        #
+                        # print(
+                        #     'epoch:%d/%d batch:%d/%d train_loss:%.5f valid_loss:%.5f valid_acc:%.5f rnd_valid_acc=%.5f%s' %
+                        #     (epoch + 1, self.epochs, batch, len(train_loader), loss.item(), val_losses_mean,
+                        #      val_accs_mean, rnd_valid_acc, best_str))
 
                         print(
-                            'epoch:%d/%d batch:%d/%d train_loss:%.5f valid_loss:%.5f valid_acc:%.5f rnd_valid_acc=%.5f%s' %
+                            'epoch:%d/%d batch:%d/%d train_loss:%.5f valid_loss:%.5f valid_acc:%.5f%s' %
                             (epoch + 1, self.epochs, batch, len(train_loader), loss.item(), val_losses_mean,
-                             val_accs_mean, rnd_valid_acc, best_str))
+                             val_accs_mean, best_str))
+
                     total_train_losses.append(loss.item())
                     total_valid_losses.append(val_losses_mean)
                     total_valid_accs.append(val_accs_mean)
@@ -170,7 +176,7 @@ class RNNTrumpDetector(nn.Module):
             if validate:
                 plt.show()
                 plt.plot(x, total_valid_accs, label='valid')
-                plt.plot([x[0], x[-1]], [rnd_valid_acc, rnd_valid_acc], 'k--', label='random')
+                # plt.plot([x[0], x[-1]], [rnd_valid_acc, rnd_valid_acc], 'k--', label='random')
                 plt.ylabel('acc')
                 plt.legend()
                 plt.show()
