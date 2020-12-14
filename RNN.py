@@ -3,6 +3,7 @@ from torch import nn
 import numpy as np
 from torch.utils.data import TensorDataset, DataLoader
 import matplotlib.pyplot as plt
+from sklearn.metrics import roc_auc_score
 
 
 class RNNTrumpDetector(nn.Module):
@@ -78,12 +79,13 @@ class RNNTrumpDetector(nn.Module):
             X_train = X_train[:train_len]
             y_train = y_train[:train_len]
 
-            batch_size_valid = int(len(y_valid) / self.n_batches)
+            # batch_size_valid = int(len(y_valid) / self.n_batches)
+            batch_size_valid = int(len(y_valid))
             val_data = TensorDataset(torch.from_numpy(X_valid), torch.from_numpy(y_valid))
             val_loader = DataLoader(val_data, shuffle=True, batch_size=batch_size_valid)
 
             total_valid_losses = []
-            total_valid_accs = []
+            total_valid_aucs = []
             valid_loss_min = np.Inf
 
         batch_size_train = int(len(y_train) / self.n_batches)
@@ -109,11 +111,6 @@ class RNNTrumpDetector(nn.Module):
                 output, h = self(x_train, h)
                 loss = self.loss_function(output.squeeze(), y_train.float())
 
-                # pred = torch.round(output.squeeze())
-                # correct_tensor = pred.eq(labels.float().view_as(pred))
-                # correct = np.squeeze(correct_tensor.cpu().numpy())
-                # train_acc = np.mean(correct)
-
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.parameters(), self.clip_size)
                 self.optimizer.step()
@@ -121,7 +118,7 @@ class RNNTrumpDetector(nn.Module):
                 if validate and counter % self.steps_between_validations == 0:
                     val_h = self.init_hidden(batch_size_valid)
                     val_losses = []
-                    valid_accs = []
+                    valid_aucs = []
                     self.eval()
                     for x_valid, y_valid in val_loader:
                         if not y_valid.shape[0] == batch_size_valid:
@@ -133,13 +130,14 @@ class RNNTrumpDetector(nn.Module):
                         val_losses.append(val_loss.item())
 
                         pred = torch.round(out.squeeze())
-                        correct_tensor = pred.eq(y_valid.float().view_as(pred))
-                        correct = np.squeeze(correct_tensor.cpu().numpy())
-                        valid_accs.append(np.mean(correct))
+                        # correct_tensor = pred.eq(y_valid.float().view_as(pred))
+                        # correct = np.squeeze(correct_tensor.cpu().numpy())
+                        # valid_aucs.append(np.mean(correct))
+                        valid_aucs.append(roc_auc_score(y_valid.numpy(), pred.detach().numpy()))
 
                     self.train()
                     val_losses_mean = float(np.mean(val_losses))
-                    val_accs_mean = float(np.mean(valid_accs))
+                    val_accs_mean = float(np.mean(valid_aucs))
                     best_str = ''
                     if np.mean(val_losses) <= valid_loss_min:
                         if save_model:
@@ -147,24 +145,13 @@ class RNNTrumpDetector(nn.Module):
                         valid_loss_min = val_losses_mean
                         best_str = ' NEW BEST'
                     if verbose:
-
-                        # for comparing validation performance with a random flip coin classifier
-                        # rnd_valid_acc = float(np.mean(y_valid.numpy()))/
-                        # rnd_valid_acc = max(rnd_valid_acc, 1 - rnd_valid_acc)
-                        #
-                        # print(
-                        #     'epoch:%d/%d batch:%d/%d train_loss:%.5f valid_loss:%.5f valid_acc:%.5f rnd_valid_acc=%.5f%s' %
-                        #     (epoch + 1, self.epochs, batch, len(train_loader), loss.item(), val_losses_mean,
-                        #      val_accs_mean, rnd_valid_acc, best_str))
-
-                        print(
-                            'epoch:%d/%d batch:%d/%d train_loss:%.5f valid_loss:%.5f valid_acc:%.5f%s' %
+                        print('epoch:%d/%d batch:%d/%d train_loss:%.5f valid_loss:%.5f valid_auc:%.5f%s' %
                             (epoch + 1, self.epochs, batch, len(train_loader), loss.item(), val_losses_mean,
                              val_accs_mean, best_str))
 
                     total_train_losses.append(loss.item())
                     total_valid_losses.append(val_losses_mean)
-                    total_valid_accs.append(val_accs_mean)
+                    total_valid_aucs.append(val_accs_mean)
 
         x = list(range(len(total_train_losses)))
         if plot_history:
@@ -175,7 +162,7 @@ class RNNTrumpDetector(nn.Module):
             plt.legend()
             if validate:
                 plt.show()
-                plt.plot(x, total_valid_accs, label='valid')
+                plt.plot(x, total_valid_aucs, label='valid')
                 # plt.plot([x[0], x[-1]], [rnd_valid_acc, rnd_valid_acc], 'k--', label='random')
                 plt.ylabel('acc')
                 plt.legend()
@@ -185,5 +172,5 @@ class RNNTrumpDetector(nn.Module):
         X = X.toarray()
         data = torch.from_numpy(X).float()
         self.optimizer.zero_grad()
-        outputs = self(data)
-        return torch.round(outputs.squeeze())
+        outputs = self(data, self.init_hidden(len(X)))
+        return outputs[0].detach().numpy().round()
