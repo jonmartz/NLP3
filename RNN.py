@@ -67,7 +67,7 @@ class RNNTrumpDetector(nn.Module):
                   weight.new(self.lstm_layers, batch_size, self.lstm_out_dim).zero_().to(self.device))
         return hidden
 
-    def fit(self, X_train, y_train, valid_frac=0.2, verbose=True, plot_history=True, save_model=False):
+    def fit(self, X_train, y_train, valid_frac=0.0, verbose=True, plot_history=True, save_model=False):
 
         X_train, y_train = X_train.toarray(), np.array(y_train, dtype=int)  # .reshape(-1, 1)
 
@@ -81,8 +81,8 @@ class RNNTrumpDetector(nn.Module):
 
             # batch_size_valid = int(len(y_valid) / self.n_batches)
             batch_size_valid = int(len(y_valid))
-            val_data = TensorDataset(torch.from_numpy(X_valid), torch.from_numpy(y_valid))
-            val_loader = DataLoader(val_data, shuffle=True, batch_size=batch_size_valid)
+            valid_data = TensorDataset(torch.from_numpy(X_valid), torch.from_numpy(y_valid))
+            valid_loader = DataLoader(valid_data, shuffle=True, batch_size=batch_size_valid)
 
             total_valid_losses = []
             total_valid_aucs = []
@@ -115,12 +115,14 @@ class RNNTrumpDetector(nn.Module):
                 nn.utils.clip_grad_norm_(self.parameters(), self.clip_size)
                 self.optimizer.step()
 
+                total_train_losses.append(loss.item())
+
                 if validate and counter % self.steps_between_validations == 0:
                     val_h = self.init_hidden(batch_size_valid)
                     val_losses = []
                     valid_aucs = []
                     self.eval()
-                    for x_valid, y_valid in val_loader:
+                    for x_valid, y_valid in valid_loader:
                         if not y_valid.shape[0] == batch_size_valid:
                             continue
                         val_h = tuple([each.data for each in val_h])
@@ -146,22 +148,26 @@ class RNNTrumpDetector(nn.Module):
                         best_str = ' NEW BEST'
                     if verbose:
                         print('epoch:%d/%d batch:%d/%d train_loss:%.5f valid_loss:%.5f valid_auc:%.5f%s' %
-                            (epoch + 1, self.epochs, batch, len(train_loader), loss.item(), val_losses_mean,
-                             val_accs_mean, best_str))
+                              (epoch + 1, self.epochs, batch, self.n_batches, loss.item(), val_losses_mean,
+                               val_accs_mean, best_str))
 
-                    total_train_losses.append(loss.item())
                     total_valid_losses.append(val_losses_mean)
                     total_valid_aucs.append(val_accs_mean)
+
+                elif verbose:
+                    print('epoch:%d/%d batch:%d/%d train_loss:%.5f' %
+                          (epoch + 1, self.epochs, batch, self.n_batches, loss.item()))
 
         x = list(range(len(total_train_losses)))
         if plot_history:
             plt.plot(x, total_train_losses, label='train')
             if validate:
                 plt.plot(x, total_valid_losses, label='valid')
+            plt.xlabel('batch')
             plt.ylabel('loss')
             plt.legend()
+            plt.show()
             if validate:
-                plt.show()
                 plt.plot(x, total_valid_aucs, label='valid')
                 # plt.plot([x[0], x[-1]], [rnd_valid_acc, rnd_valid_acc], 'k--', label='random')
                 plt.ylabel('acc')
@@ -174,3 +180,15 @@ class RNNTrumpDetector(nn.Module):
         self.optimizer.zero_grad()
         outputs = self(data, self.init_hidden(len(X)))
         return outputs[0].detach().numpy().round()
+
+        # X = X.toarray()
+        # batch_size_valid = int(len(X))
+        # val_data = TensorDataset(torch.from_numpy(X), torch.from_numpy(X))
+        # val_loader = DataLoader(val_data, shuffle=True, batch_size=batch_size_valid)
+        # val_h = self.init_hidden(batch_size_valid)
+        # self.eval()
+        # for x_valid, y_valid in val_loader:
+        #     val_h = tuple([each.data for each in val_h])
+        #     x_valid, y_valid = x_valid.to(self.device), y_valid.to(self.device)
+        #     out, val_h = self(x_valid, val_h)
+        #     return torch.round(out.squeeze()).detach().numpy()

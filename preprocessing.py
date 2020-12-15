@@ -19,22 +19,30 @@ tweet_id, handle, tweet_text, tweet_time, device, processed_tweet_text = 'tweet 
 
 
 def create_tweets_df(tweets_src_file):
-    dt_tweets = pd.read_csv(tweets_src_file, sep='\t',
-                            names=['tweet id', 'user handle', 'tweet text', 'time stamp', 'device'])
-    dt_tweets.dropna(inplace=True)
-    dt_tweets.drop(columns=['tweet id'], inplace=True)
-    dt_tweets['time stamp'] = dt_tweets['time stamp'].apply(lambda x: datetime.strptime(str(x), '%Y-%m-%d %H:%M:%S'))
-    dt_tweets['label'] = (dt_tweets['device'] == 'android') & (dt_tweets['time stamp'] < datetime(2017, 4, 1))
+    dt_tweets = pd.read_csv(tweets_src_file, sep='\t')
+    if len(dt_tweets.columns) == 5:  # this is a train set
+        dt_tweets.columns = ['tweet id', 'user handle', 'tweet text', 'time stamp', 'device']
+        dt_tweets.drop(columns=['tweet id'], inplace=True)
+        dt_tweets.dropna(inplace=True)
+        dt_tweets['time stamp'] = dt_tweets['time stamp'].apply(lambda x: datetime.strptime(str(x), '%Y-%m-%d %H:%M:%S'))
+        dt_tweets['label'] = (dt_tweets['device'] == 'android') & (dt_tweets['time stamp'] < datetime(2017, 4, 1))
+    else:  # this is a test set
+        dt_tweets.columns = ['user handle', 'tweet text', 'time stamp']
+        dt_tweets.dropna(inplace=True)
+        dt_tweets['time stamp'] = dt_tweets['time stamp'].apply(lambda x: datetime.strptime(str(x), '%Y-%m-%d %H:%M:%S'))
     return dt_tweets
 
 
-def get_raw_data():
-    dt_tweets_df = create_tweets_df('trump_train.tsv')
-    dt_tweets_df['tweet text processed'] = dt_tweets_df['tweet text'].apply(normalize_text)
-    dt_tweets_df = dt_tweets_df.sort_values(['time stamp']).reset_index()
-    label = dt_tweets_df['label']
-    dt_tweets_df = dt_tweets_df.drop(['label'], axis=1)
-    return dt_tweets_df, label
+def get_raw_data(path):
+    df = create_tweets_df(path)
+    df['tweet text processed'] = df['tweet text'].apply(normalize_text)
+    df = df.sort_values(['time stamp']).reset_index()
+    if 'label' in df.columns:  # for train set
+        label = df['label']
+        df = df.drop(['label'], axis=1)
+    else:  # for test set
+        label = None
+    return df, label
 
 
 def normalize_text(text):
@@ -202,12 +210,11 @@ class WordEmbedder:
         return X
 
 
-def print_evaluation_results(y_test, predictions):
-    print(confusion_matrix(y_test, predictions))
-    print(classification_report(y_test, predictions))
-    print(accuracy_score(y_test, predictions))
-    fpr, tpr, thresholds = metrics.roc_curve(y_test, predictions)
-    print("auc: ")
-    auc = metrics.auc(fpr, tpr)
-    print(auc)
+def evaluate_results(clf_name, y_test, predictions, verbose=False):
+    # print(confusion_matrix(y_test, predictions))
+    # print(classification_report(y_test, predictions))
+    acc = accuracy_score(y_test, predictions)
+    auc = metrics.roc_auc_score(y_test, predictions)
+    if verbose:
+        print("%s: acc=%.5f, auc=%.5f" % (clf_name, acc, auc))
     return auc
