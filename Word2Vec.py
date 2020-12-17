@@ -4,14 +4,20 @@ import preprocessing as pre
 import json
 import gzip
 
+"""
+Save the Spacy word embeddings to disk.
+"""
+
 print('loading model...')
-# language_model = spacy.load('en_core_web_sm')  # dim=96
-language_model = spacy.load('en_core_web_md')  # dim=300
+language_model = spacy.load('en_core_web_sm')  # dim=96
+# language_model = spacy.load('en_core_web_md')  # dim=300
 
 print('processing train and test sets...')
 vocabulary, vocabulary_ordered, vectors = set(), [], []
-df_train = pd.read_csv('dataset_train.csv')
-df_test = pd.read_csv('dataset_test.csv')
+# df_train = pd.read_csv('dataset_train.csv')
+df_train = pre.create_tweets_df('trump_train.tsv')
+# df_test = pd.read_csv('dataset_test.csv')
+df_test = pre.create_tweets_df('trump_test.tsv')
 texts = pd.concat([df_train['tweet text'], df_test['tweet text']])
 for i, text in enumerate(texts):
     print('%d/%d' % (i + 1, len(texts)))

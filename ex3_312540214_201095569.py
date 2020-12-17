@@ -17,10 +17,19 @@ import gzip
 import json
 import pickle
 import pandas as pd
+import matplotlib.pyplot as plt
 
 
 class Net(nn.Module):
-    def __init__(self, input_size, hidden_size, criterion, num_classes=2):
+    """
+    Neural Network class.
+    """
+    def __init__(self, input_size, hidden_size, criterion):
+        """
+        :param input_size: of network
+        :param hidden_size: size of hidden layer
+        :param criterion: loss type
+        """
         super(Net, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
@@ -40,7 +49,14 @@ class Net(nn.Module):
 
 class FNNClassifier:
 
-    def __init__(self, model, optimizer, criterion, batch_size=256, epochs=40):
+    def __init__(self, model, optimizer, criterion, batch_size=256, epochs=30):
+        """
+        :param model: an instance of Net(...)
+        :param optimizer: for gradient descent
+        :param criterion: loss type
+        :param batch_size: for training
+        :param epochs: for training
+        """
         self.model = model
         self.optimizer = optimizer
         self.criterion = criterion
@@ -70,22 +86,42 @@ class FNNClassifier:
         return outputs
 
 
-def create_fnn_model(features_count, hidden_layer_size=300, learn_rate=0.001):
+def create_fnn_model(features_count, hidden_layer_size=300, lr=0.005):
+    """
+    Creates an FFNN model.
+    :param features_count: the input size
+    :param hidden_layer_size: for the hidden layer
+    :param lr: learning rate for training the NN
+    :return: instance of FNNClassifier(...)
+    """
     criterion = nn.CrossEntropyLoss()
-    net = Net(input_size=features_count, hidden_size=hidden_layer_size, criterion=criterion, num_classes=2)
-    optimizer = torch.optim.Adam(net.parameters(), lr=learn_rate)
+    net = Net(input_size=features_count, hidden_size=hidden_layer_size, criterion=criterion)
+    optimizer = torch.optim.Adam(net.parameters(), lr=lr)
     return FNNClassifier(model=net, optimizer=optimizer, criterion=criterion)
 
 
-def create_rnn_model(n_features):
+def create_rnn_model(n_features, epochs, lr=0.005):
+    """
+    Creates an RNN model.
+    :param n_features: to concatenate with the LSTM output
+    :param epochs: for training
+    :param lr: learning rate for training the RNN
+    :return: instance of RNNTrumpDetector(...)
+    """
     model = RNNTrumpDetector(word_vectors, word_indexes, sequence_len=30, n_features=n_features, lstm_out_dim=256,
-                             lstm_layers=2, dense_layer_dims=[], epochs=20, device=device, n_batches=10,
-                             lr=0.005, lstm_dropout=0.2, lstm_out_dropout=0.2)
+                             lstm_layers=2, dense_layer_dims=[], epochs=epochs, device=device, n_batches=10,
+                             lr=lr, lstm_dropout=0.2, lstm_out_dropout=0.2)
     model.to(device)
     return model
 
 
 def create_pipeline(clf_name, clf):
+    """
+    Create a pipeline of data pre-processing and classification
+    :param clf_name: name of classifier
+    :param clf: classifier instance
+    :return: the Pipeline object
+    """
     transformers = [
         ('tfidf', Pipeline(
             [
@@ -103,6 +139,15 @@ def create_pipeline(clf_name, clf):
 
 
 def apply_train_and_test(X_train, y_train, X_test, y_test, score, verbose=False):
+    """
+    Update the score {clf_name: []} dictionary, by adding the AUC scores
+    :param X_train: train data
+    :param y_train: train labels
+    :param X_test: test data
+    :param y_test: test labels
+    :param score: dictionary of form {clf_name: []}
+    :param verbose: set to true to print stuff
+    """
     for clf_name, item in classifiers.items():
         clf_class, params = item
         clf = clf_class(**params)
@@ -115,11 +160,18 @@ def apply_train_and_test(X_train, y_train, X_test, y_test, score, verbose=False)
 
 
 def train_best_model(n_splits=10, verbose=True):
+    """
+    Required function, it's goal is in the assignment instructions. Selects the model with the best
+    cross-validation results and fits it on the whole training data.
+    :param n_splits: n for the n-fold cross validation
+    :param verbose: to print stuff
+    :return: pipeline that includes the best classifier
+    """
     score = {clf_name: [] for clf_name in classifiers.keys()}
     df, target = pre.get_raw_data('trump_train.tsv')
 
     # cross-validate to find best model
-    cv = KFold(n_splits=n_splits, shuffle=True)
+    cv = KFold(n_splits=n_splits, shuffle=True, random_state=0)
     split_idx = 0
     for train_index, test_index in cv.split(df):
         split_idx += 1
@@ -132,12 +184,12 @@ def train_best_model(n_splits=10, verbose=True):
     pd.DataFrame(score).to_csv('results.csv', index_label='fold')
 
     # train best model on full dataset
+    best_model_name = argmax_from_dict(avg_score)
     if verbose:
         print('\naverage scores:')
         for name, auc in avg_score.items():
             print('\t%s: auc=%.5f' % (name, auc))
-        print('\nfitting best model on full train set...')
-    best_model_name = max(avg_score)
+        print('\nfitting %s on full train set...' % best_model_name)
     best_model_class, best_params = classifiers[best_model_name]
     pipeline = create_pipeline(best_model_name, best_model_class(**best_params))
     pipeline.fit(df, target)
@@ -146,14 +198,56 @@ def train_best_model(n_splits=10, verbose=True):
     return pipeline
 
 
+def argmax_from_dict(dict):
+    """
+    Return the argmax (key that points to largest value) from the dict.
+    :param dict: to get argmax from
+    :return: argmax for dict
+    """
+    argmax = None
+    value_max = 0
+    for arg, value in dict.items():
+        if value > value_max:
+            value_max = value
+            argmax = arg
+    return argmax
+
+
 def load_best_model():
+    """
+    Required function, it's goal is in the assignment instructions.
+    :return: pipeline that includes best model
+    """
     with open('best_model.pickle', 'rb') as handle:
         return pickle.load(handle)
 
 
 def predict(m, fn):
+    """
+    Required function, it's goal is in the assignment instructions.
+    :param m: model
+    :param fn: file path
+    :return: np.array where 0 = trump, 1 = not trump.
+    """
     df, target = pre.get_raw_data(fn)
-    return m.predict(df).astype(int)  # todo: return as list? As instructions say
+    return 1 - m.predict(df).astype(int)  # todo: return as list? As instructions say
+
+
+def plot_feature_importances(importances, feature_names, top_n=10):
+    """
+    For making the report.
+    :param importances: feature importances
+    :param feature_names: names of features
+    :param top_n: amount of most important features to plot
+    """
+    imp = importances
+    imp, feature_names = zip(*sorted(zip(imp, feature_names)))
+    imp, feature_names = imp[-top_n:], feature_names[-top_n:]
+    plt.barh(range(len(feature_names)), imp, align='center')
+    plt.yticks(range(len(feature_names)), feature_names)
+    plt.xlabel('feature importance')
+    plt.savefig('feature_importances.png', bbox_inches='tight')
+    plt.show()
 
 
 torch.manual_seed(0)  # for reproducibility
@@ -164,7 +258,7 @@ classifiers = {
     'SVC_rbf': (SVC, {'kernel': 'rbf'}),
     'SVC_linear': (SVC, {'kernel': 'linear'}),
     'FFNN': (create_fnn_model, {'features_count': 9006}),
-    'RNN': (create_rnn_model, {'n_features': 9006}),
+    'RNN': (create_rnn_model, {'n_features': 9006, 'epochs': 20, 'lr': 0.005}),
     'AdaBoost': (AdaBoostClassifier, {'n_estimators': 100}),
 }
 
@@ -186,7 +280,7 @@ if 'RNN' in classifiers:
         device = torch.device('cpu')
 
 if __name__ == "__main__":
-    m = train_best_model()
+    m = train_best_model(n_splits=10)
     # m = load_best_model()
 
     # save test predictions
@@ -195,5 +289,11 @@ if __name__ == "__main__":
         y_string = str(y_pred)[1:-1].replace('\n', '')
         file.write(y_string)
     print(y_string)
+
+    # # print feature importances for AdaBoost
+    # names = m[0].transformer_list[0][1][1].get_feature_names()
+    # names += ['weekday', 'hour']
+    # names += ["sentiment_" + i for i in ["neg", "neu", "pos", "compound"]]
+    # plot_feature_importances(m[-1].feature_importances_, names)
 
     print('\ndone')

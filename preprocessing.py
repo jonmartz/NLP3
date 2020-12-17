@@ -19,21 +19,31 @@ tweet_id, handle, tweet_text, tweet_time, device, processed_tweet_text = 'tweet 
 
 
 def create_tweets_df(tweets_src_file):
+    """
+    Create pandas DF from the tsv file, with column names and label column (if train).
+    :param tweets_src_file: path of tsv file
+    :return: pd.Dataframe
+    """
     dt_tweets = pd.read_csv(tweets_src_file, sep='\t')
-    if len(dt_tweets.columns) == 5:  # this is a train set
+    is_train_set = len(dt_tweets.columns) == 5
+    if is_train_set:
         dt_tweets.columns = ['tweet id', 'user handle', 'tweet text', 'time stamp', 'device']
         dt_tweets.drop(columns=['tweet id'], inplace=True)
-        dt_tweets.dropna(inplace=True)
-        dt_tweets['time stamp'] = dt_tweets['time stamp'].apply(lambda x: datetime.strptime(str(x), '%Y-%m-%d %H:%M:%S'))
-        dt_tweets['label'] = (dt_tweets['device'] == 'android') & (dt_tweets['time stamp'] < datetime(2017, 4, 1))
     else:  # this is a test set
         dt_tweets.columns = ['user handle', 'tweet text', 'time stamp']
-        dt_tweets.dropna(inplace=True)
-        dt_tweets['time stamp'] = dt_tweets['time stamp'].apply(lambda x: datetime.strptime(str(x), '%Y-%m-%d %H:%M:%S'))
+    dt_tweets.dropna(inplace=True)
+    dt_tweets['time stamp'] = dt_tweets['time stamp'].apply(lambda x: datetime.strptime(str(x), '%Y-%m-%d %H:%M:%S'))
+    if is_train_set:
+        dt_tweets['label'] = (dt_tweets['device'] == 'android') & (dt_tweets['time stamp'] < datetime(2017, 4, 1))
     return dt_tweets
 
 
 def get_raw_data(path):
+    """
+    Add processed text to the df and get label column.
+    :param path: of tsv file
+    :return: data (pd.Dataframe) and labels (pd.Series)
+    """
     df = create_tweets_df(path)
     df['tweet text processed'] = df['tweet text'].apply(normalize_text)
     df = df.sort_values(['time stamp']).reset_index()
@@ -91,7 +101,13 @@ def tokenize_for_vectors(text):
 
 
 class ItemSelector(BaseEstimator, TransformerMixin):
+    """
+    Returns the desired column from the dataframe
+    """
     def __init__(self, key):
+        """
+        :param key: name of column to extract
+        """
         self.key = key
 
     def fit(self, x, y=None):
@@ -102,8 +118,11 @@ class ItemSelector(BaseEstimator, TransformerMixin):
 
 
 class TimeStatistics:
+    """
+    Extract features related to time.
+    """
     def __init__(self, key):
-        self.features_name = ['weekday', 'relative_time_to_election', 'hour']
+        self.features_name = ['weekday', 'hour']
         self.key = key
 
     def get_feature_names(self, ):
@@ -145,9 +164,14 @@ class TimeStatistics:
 
 
 class TextStatistics:
+    """
+    Extract features related to sentiment.
+    """
     def __init__(self, key):
-        self.features_name = ['words_count', 'alpha_bet_dist', 'digits_dist', 'nouns_count']
-        self.features_name += ["sentiment_" + i for i in ["neg", "neu", "pos", "compound"]]
+        """
+        :param key: name of tweet text column
+        """
+        self.features_name = ["sentiment_" + i for i in ["neg", "neu", "pos", "compound"]]
         self.sid = SentimentIntensityAnalyzer()
         self.key = key
 
@@ -190,7 +214,15 @@ class TextStatistics:
 
 
 class WordEmbedder:
+    """
+    Extract index of word embeddings, according to the word indexes object.
+    """
     def __init__(self, key, word_indexes, sequence_len=30):
+        """
+        :param key: name of tweet text column
+        :param word_indexes: dict of form {token: index of token's embedding}
+        :param sequence_len: for padding and cropping texts that are too large
+        """
         self.features_name = ['w%d' % i for i in range(sequence_len)]
         self.key = key
         self.word_indexes = word_indexes
@@ -204,13 +236,20 @@ class WordEmbedder:
         X = np.zeros([len(texts), self.sequence_len], dtype=int)
         for i, text in enumerate(texts):
             words = tokenize_for_vectors(text)
-            # x = [self.word_indexes[word] if word in self.word_indexes else 0 for word in words]
             x = [self.word_indexes[word] for word in words if word in self.word_indexes]
             X[i, -len(x):] = x[:self.sequence_len]  # take padding and maximum sequence length into account
         return X
 
 
 def evaluate_results(clf_name, y_test, predictions, verbose=False):
+    """
+    Evaluate results and get AUC
+    :param clf_name: name of classifier
+    :param y_test: test labels
+    :param predictions: test predictions
+    :param verbose: to print stuff
+    :return: test performance in terms of AUC
+    """
     # print(confusion_matrix(y_test, predictions))
     # print(classification_report(y_test, predictions))
     acc = accuracy_score(y_test, predictions)

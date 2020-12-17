@@ -7,9 +7,29 @@ from sklearn.metrics import roc_auc_score
 
 
 class RNNTrumpDetector(nn.Module):
+    """
+    RNN for predicting if Trump wrote a tweet or not.
+    """
     def __init__(self, word_vectors, word_indexes, sequence_len, n_features, lstm_out_dim, lstm_layers,
                  dense_layer_dims, epochs, device, lstm_dropout=0.2, lstm_out_dropout=0.2, n_batches=30,
                  lr=0.005, steps_between_validations=1, clip_size=5):
+        """
+        :param word_vectors: np.array with the word embeddings
+        :param word_indexes: dict of form {token: index of token's embedding}
+        :param sequence_len: length of token sequences (padded)
+        :param n_features: # of features to be concatenated with LSTM output
+        :param lstm_out_dim: size of LSTM output
+        :param lstm_layers: # of LSTM layers stacked on one another
+        :param dense_layer_dims: list with sizes of Dense layers that follow the LSTM layer
+        :param epochs: for training
+        :param device: to work with CPU or GPU
+        :param lstm_dropout: dropout inside the LSTM layer
+        :param lstm_out_dropout: dropout in the LSTM's output
+        :param n_batches:  for training
+        :param lr: learning rate for training
+        :param steps_between_validations: to evaluate results
+        :param clip_size: for training
+        """
         super(RNNTrumpDetector, self).__init__()
         self.word_indexes = word_indexes
         self.sequence_len = sequence_len
@@ -67,7 +87,7 @@ class RNNTrumpDetector(nn.Module):
                   weight.new(self.lstm_layers, batch_size, self.lstm_out_dim).zero_().to(self.device))
         return hidden
 
-    def fit(self, X_train, y_train, valid_frac=0.0, verbose=True, plot_history=True, save_model=False):
+    def fit(self, X_train, y_train, valid_frac=0.0, verbose=False, plot_history=False, save_model=False):
 
         X_train, y_train = X_train.toarray(), np.array(y_train, dtype=int)  # .reshape(-1, 1)
 
@@ -117,6 +137,7 @@ class RNNTrumpDetector(nn.Module):
 
                 total_train_losses.append(loss.item())
 
+                # only for validation
                 if validate and counter % self.steps_between_validations == 0:
                     val_h = self.init_hidden(batch_size_valid)
                     val_losses = []
@@ -132,9 +153,6 @@ class RNNTrumpDetector(nn.Module):
                         val_losses.append(val_loss.item())
 
                         pred = torch.round(out.squeeze())
-                        # correct_tensor = pred.eq(y_valid.float().view_as(pred))
-                        # correct = np.squeeze(correct_tensor.cpu().numpy())
-                        # valid_aucs.append(np.mean(correct))
                         valid_aucs.append(roc_auc_score(y_valid.numpy(), pred.detach().numpy()))
 
                     self.train()
@@ -158,37 +176,9 @@ class RNNTrumpDetector(nn.Module):
                     print('epoch:%d/%d batch:%d/%d train_loss:%.5f' %
                           (epoch + 1, self.epochs, batch, self.n_batches, loss.item()))
 
-        x = list(range(len(total_train_losses)))
-        if plot_history:
-            plt.plot(x, total_train_losses, label='train')
-            if validate:
-                plt.plot(x, total_valid_losses, label='valid')
-            plt.xlabel('batch')
-            plt.ylabel('loss')
-            plt.legend()
-            plt.show()
-            if validate:
-                plt.plot(x, total_valid_aucs, label='valid')
-                # plt.plot([x[0], x[-1]], [rnd_valid_acc, rnd_valid_acc], 'k--', label='random')
-                plt.ylabel('acc')
-                plt.legend()
-                plt.show()
-
     def predict(self, X):
         X = X.toarray()
         data = torch.from_numpy(X).float()
         self.optimizer.zero_grad()
         outputs = self(data, self.init_hidden(len(X)))
         return outputs[0].detach().numpy().round()
-
-        # X = X.toarray()
-        # batch_size_valid = int(len(X))
-        # val_data = TensorDataset(torch.from_numpy(X), torch.from_numpy(X))
-        # val_loader = DataLoader(val_data, shuffle=True, batch_size=batch_size_valid)
-        # val_h = self.init_hidden(batch_size_valid)
-        # self.eval()
-        # for x_valid, y_valid in val_loader:
-        #     val_h = tuple([each.data for each in val_h])
-        #     x_valid, y_valid = x_valid.to(self.device), y_valid.to(self.device)
-        #     out, val_h = self(x_valid, val_h)
-        #     return torch.round(out.squeeze()).detach().numpy()
