@@ -230,7 +230,7 @@ def predict(m, fn):
     :return: np.array where 0 = trump, 1 = not trump.
     """
     df, target = pre.get_raw_data(fn)
-    return 1 - m.predict(df).astype(int)  # todo: return as list? As instructions say
+    return list(1 - m.predict(df).astype(int))
 
 
 def plot_feature_importances(importances, feature_names, top_n=10):
@@ -280,13 +280,13 @@ if 'RNN' in classifiers:
         device = torch.device('cpu')
 
 if __name__ == "__main__":
-    m = train_best_model(n_splits=10)
-    # m = load_best_model()
+    # m = train_best_model(n_splits=10)
+    m = load_best_model()
 
     # save test predictions
     y_pred = predict(m, 'trump_test.tsv')
     with open('312540214_201095569.txt', 'w') as file:
-        y_string = str(y_pred)[1:-1].replace('\n', '')
+        y_string = str(y_pred)[1:-1].replace('\n', '').replace(',', '')
         file.write(y_string)
     print(y_string)
 
